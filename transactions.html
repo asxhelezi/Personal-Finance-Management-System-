@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transactions | Personal Finance System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="styles/style.css">
+</head>
+<body>
+  <div id="mainNavContainer"></div>
+  <div class="wrap">
+    <div class="frame">
+
+      <div class="hero mb-3">
+        <div class="row align-items-center g-3">
+          <div class="col-md-8">
+            <div class="kicker">Transactions</div>
+            <h1 class="page-title">Transaction history</h1>
+            <p class="page-sub">View, search, and filter all your records.</p>
+          </div>
+          <div class="col-md-4 text-md-end">
+            <a class="btn btn-primary" href="new-transaction.html">Add transaction</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-card mb-3">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-4">
+            <label class="form-label" for="searchText">Search</label>
+            <input class="form-control" id="searchText" type="text" placeholder="Description or category…">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label" for="filterType">Type</label>
+            <select class="form-select" id="filterType">
+              <option value="">All types</option>
+              <option value="Income">Income</option>
+              <option value="Expense">Expense</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label" for="filterCategory">Category</label>
+            <select class="form-select" id="filterCategory">
+              <option value="">All categories</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <button class="btn btn-outline btn-w" id="clearFilters" type="button">Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <div class="section-title">Transactions</div>
+            <div class="section-desc" id="countText">Showing all</div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Category</th>
+                <th>Description</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="transactionTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="footer">© 2026 Personal Finance System</div>
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="scripts/app.js"></script>
+  <script>
+    $(function () {
+      PFM.requireLogin();
+      PFM.renderNav('transactions');
+
+      var categories = PFM.getCategories();
+      var allCats    = Array.from(new Set(categories.Income.concat(categories.Expense)));
+      var catHtml    = '<option value="">All categories</option>';
+      allCats.forEach(function (c) { catHtml += '<option value="' + c + '">' + c + '</option>'; });
+      $('#filterCategory').html(catHtml);
+
+      function renderTable() {
+        var list     = PFM.getUserTransactions().slice().sort(function (a, b) {
+          return new Date(b.date) - new Date(a.date) || Number(b.id) - Number(a.id);
+        });
+        var text     = $('#searchText').val().trim().toLowerCase();
+        var type     = $('#filterType').val();
+        var category = $('#filterCategory').val();
+
+        list = list.filter(function (item) {
+          return (!text     || item.description.toLowerCase().includes(text) || item.category.toLowerCase().includes(text))
+              && (!type     || item.type === type)
+              && (!category || item.category === category);
+        });
+
+        $('#countText').text('Showing ' + list.length + ' transaction' + (list.length === 1 ? '' : 's'));
+
+        if (!list.length) {
+          $('#transactionTableBody').html('<tr><td colspan="7"><div class="empty">No transactions matched your filters.</div></td></tr>');
+          return;
+        }
+        $('#transactionTableBody').html(list.map(PFM.transactionRow).join(''));
+      }
+
+      renderTable();
+      $('#searchText, #filterType, #filterCategory').on('input change', renderTable);
+      $('#clearFilters').on('click', function () {
+        $('#searchText').val('');
+        $('#filterType').val('');
+        $('#filterCategory').val('');
+        renderTable();
+      });
+    });
+  </script>
+</body>
+</html>

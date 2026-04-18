@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reports | Personal Finance System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="styles/style.css">
+</head>
+<body>
+  <div id="mainNavContainer"></div>
+  <div class="wrap">
+    <div class="frame">
+
+      <div class="hero mb-3">
+        <div class="row align-items-center g-3">
+          <div class="col-md-8">
+            <div class="kicker">Reports</div>
+            <h1 class="page-title">Custom date-range report</h1>
+            <p class="page-sub">
+              Amounts are shown in your profile currency.
+              To change the currency, go to <a href="profile.html">your profile</a> — savings will be converted automatically.
+            </p>
+          </div>
+          <div class="col-md-4 text-md-end">
+            <span id="currencyNote" class="badge badge-income" style="font-size:.8rem;padding:.5rem 1rem;"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-card mb-3">
+        <form id="reportForm" class="row g-3 align-items-end" novalidate>
+          <div class="col-md-4">
+            <label class="form-label" for="startDate">Start date</label>
+            <input class="form-control" id="startDate" type="date" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="endDate">End date</label>
+            <input class="form-control" id="endDate" type="date" required>
+          </div>
+          <div class="col-md-4">
+            <button class="btn btn-primary btn-w" type="submit">Generate report</button>
+          </div>
+        </form>
+        <div id="reportMessage" class="mt-3"></div>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="stat-card">
+            <div class="stat-label">Balance in period</div>
+            <div class="stat-value" id="reportBalance">—</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="stat-card">
+            <div class="stat-label">Income in period</div>
+            <div class="stat-value amt-income" id="reportIncome">—</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="stat-card">
+            <div class="stat-label">Expenses in period</div>
+            <div class="stat-value amt-expense" id="reportExpenses">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">© 2026 Personal Finance System</div>
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="scripts/app.js"></script>
+  <script>
+    $(function () {
+      PFM.requireLogin();
+      PFM.renderNav('reports');
+
+      var profile = PFM.getProfile();
+      var map     = PFM.getCurrencyMap();
+      var curName = (map[profile.currency] || map.EUR).name;
+      $('#currencyNote').text('Currency: ' + profile.currency + ' — ' + curName);
+
+      /* Default range: current month */
+      var now   = new Date();
+      var y     = now.getFullYear();
+      var m     = String(now.getMonth() + 1).padStart(2, '0');
+      $('#startDate').val(y + '-' + m + '-01');
+      $('#endDate').val(now.toISOString().split('T')[0]);
+
+      $('#reportForm').on('submit', function (e) {
+        e.preventDefault();
+        var startDate = $('#startDate').val();
+        var endDate   = $('#endDate').val();
+
+        if (startDate > endDate)
+          return PFM.showMessage('#reportMessage', 'danger', 'Start date must be before or equal to end date.');
+
+        var report = PFM.getReportTotals(startDate, endDate);
+
+        $('#reportBalance').text(PFM.formatAmount(report.balance));
+        $('#reportIncome').text(PFM.formatAmount(report.income));
+        $('#reportExpenses').text(PFM.formatAmount(report.expenses));
+
+        PFM.showMessage('#reportMessage', 'success',
+          'Report generated for ' + report.count + ' transaction' + (report.count === 1 ? '' : 's') +
+          ' between ' + startDate + ' and ' + endDate + '.');
+      });
+    });
+  </script>
+</body>
+</html>

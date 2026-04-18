@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In | Personal Finance System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="styles/style.css">
+</head>
+<body>
+  <div class="auth-layout">
+    <div class="auth-card">
+
+      <div class="auth-side">
+        <div class="auth-brand">Personal Finance System</div>
+        <div>
+          <div class="auth-headline">Track income, expenses, and savings in one place.</div>
+          <div class="auth-sub mt-3">Built with Bootstrap, jQuery, localStorage, and the RapidAPI exchange endpoint.</div>
+        </div>
+        <div class="auth-features">
+          <div class="fw-bold mb-1" style="font-size:.82rem;">What's inside</div>
+          <ul>
+            <li>Dashboard with live totals</li>
+            <li>Full transaction management</li>
+            <li>Savings goal tracker</li>
+            <li>Custom date-range reports</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="auth-forms">
+        <div class="auth-forms-grid">
+
+          <div class="auth-panel">
+            <div class="auth-panel-title">Log in</div>
+            <div class="auth-panel-sub">Access your saved dashboard.</div>
+            <form id="loginForm" novalidate>
+              <div class="field">
+                <label class="form-label" for="loginEmail">Email</label>
+                <input class="form-control" id="loginEmail" type="email" required>
+              </div>
+              <div class="field">
+                <label class="form-label" for="loginPassword">Password</label>
+                <input class="form-control" id="loginPassword" type="password" required>
+              </div>
+              <button class="btn btn-primary btn-w" type="submit">Log in</button>
+            </form>
+          </div>
+
+          <div class="auth-panel">
+            <div class="auth-panel-title">Create account</div>
+            <div class="auth-panel-sub">Set up your username and password.</div>
+            <form id="registerForm" novalidate>
+              <div class="field">
+                <label class="form-label" for="registerFullName">Full name</label>
+                <input class="form-control" id="registerFullName" type="text" required>
+              </div>
+              <div class="field">
+                <label class="form-label" for="registerUsername">Username</label>
+                <input class="form-control" id="registerUsername" type="text" required>
+                <div class="form-hint">4–20 characters, letters, numbers, or underscore.</div>
+              </div>
+              <div class="field">
+                <label class="form-label" for="registerEmail">Email</label>
+                <input class="form-control" id="registerEmail" type="email" required>
+              </div>
+              <div class="field">
+                <label class="form-label" for="registerPassword">Password</label>
+                <input class="form-control" id="registerPassword" type="password" required>
+                <div class="form-hint">At least 8 characters with a letter and number.</div>
+              </div>
+              <button class="btn btn-outline btn-w" type="submit">Create account</button>
+            </form>
+          </div>
+
+        </div>
+        <div id="authMessage"></div>
+        <div class="footer">© 2026 Personal Finance System</div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="scripts/app.js"></script>
+  <script>
+    $(function () {
+      if (PFM.getCurrentUser()) window.location.href = 'dashboard.html';
+      var rules = PFM.getValidationMessages();
+
+      $('#registerForm').on('submit', function (e) {
+        e.preventDefault();
+        var fullName = $('#registerFullName').val().trim();
+        var username = $('#registerUsername').val().trim();
+        var email    = $('#registerEmail').val().trim().toLowerCase();
+        var password = $('#registerPassword').val();
+        var users    = PFM.getUsers();
+
+        if (!fullName)                       return PFM.showMessage('#authMessage', 'danger', 'Full name is required.');
+        if (!PFM.validateUsername(username)) return PFM.showMessage('#authMessage', 'danger', rules.username);
+        if (!PFM.validateEmail(email))       return PFM.showMessage('#authMessage', 'danger', rules.email);
+        if (!PFM.validatePassword(password)) return PFM.showMessage('#authMessage', 'danger', rules.password);
+        if (users.some(function (u) { return u.email === email; }))
+          return PFM.showMessage('#authMessage', 'danger', 'That email is already registered.');
+        if (users.some(function (u) { return u.username.toLowerCase() === username.toLowerCase(); }))
+          return PFM.showMessage('#authMessage', 'danger', 'That username is already taken.');
+
+        users.push({ fullName: fullName, username: username, email: email, password: password, createdAt: new Date().toISOString() });
+        PFM.saveUsers(users);
+        PFM.saveCurrentUser({ fullName: fullName, username: username, email: email });
+        window.location.href = 'profile-setup.html';
+      });
+
+      $('#loginForm').on('submit', function (e) {
+        e.preventDefault();
+        var email    = $('#loginEmail').val().trim().toLowerCase();
+        var password = $('#loginPassword').val();
+        if (!PFM.validateEmail(email)) return PFM.showMessage('#authMessage', 'danger', rules.email);
+        if (!password)                 return PFM.showMessage('#authMessage', 'danger', 'Enter your password.');
+
+        var user = PFM.getUsers().find(function (u) { return u.email === email && u.password === password; });
+        if (!user) return PFM.showMessage('#authMessage', 'danger', 'Incorrect email or password.');
+
+        PFM.saveCurrentUser({ fullName: user.fullName, username: user.username, email: user.email });
+        var profile = PFM.getProfile();
+        window.location.href = (profile.phone) ? 'dashboard.html' : 'profile-setup.html';
+      });
+    });
+  </script>
+</body>
+</html>

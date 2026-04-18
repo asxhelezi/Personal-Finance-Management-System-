@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Personal Finance System</title>
+  <script>
+    var user = JSON.parse(localStorage.getItem('pfmCurrentUser') || 'null');
+    window.location.href = user ? 'dashboard.html' : 'authentication.html';
+  </script>
+</head>
+<body></body>
+</html>
