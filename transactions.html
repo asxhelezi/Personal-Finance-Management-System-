@@ -87,7 +87,7 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="scripts/app.js"></script>
   <script>
-    $(function () {
+    $(async function () {
       PFM.requireLogin();
       PFM.renderNav('transactions');
 
@@ -97,27 +97,32 @@
       allCats.forEach(function (c) { catHtml += '<option value="' + c + '">' + c + '</option>'; });
       $('#filterCategory').html(catHtml);
 
-      function renderTable() {
-        var list     = PFM.getUserTransactions().slice().sort(function (a, b) {
-          return new Date(b.date) - new Date(a.date) || Number(b.id) - Number(a.id);
-        });
-        var text     = $('#searchText').val().trim().toLowerCase();
-        var type     = $('#filterType').val();
-        var category = $('#filterCategory').val();
+      var currency = 'EUR';
+      try {
+        var profile = await PFM.getProfile();
+        currency = profile.currency || 'EUR';
+      } catch (e) {}
 
-        list = list.filter(function (item) {
-          return (!text     || item.description.toLowerCase().includes(text) || item.category.toLowerCase().includes(text))
-              && (!type     || item.type === type)
-              && (!category || item.category === category);
-        });
+      async function renderTable() {
+        var params = {};
+        var text = $('#searchText').val().trim();
+        var type = $('#filterType').val();
+        var cat  = $('#filterCategory').val();
+        if (text) params.search   = text;
+        if (type) params.type     = type;
+        if (cat)  params.category = cat;
 
-        $('#countText').text('Showing ' + list.length + ' transaction' + (list.length === 1 ? '' : 's'));
-
-        if (!list.length) {
-          $('#transactionTableBody').html('<tr><td colspan="7"><div class="empty">No transactions matched your filters.</div></td></tr>');
-          return;
+        try {
+          var res = await $.ajax({ url: PFM.API_BASE + '/transactions', headers: PFM.getAuthHeaders(), data: params });
+          $('#countText').text('Showing ' + res.count + ' transaction' + (res.count === 1 ? '' : 's'));
+          if (!res.items.length) {
+            $('#transactionTableBody').html('<tr><td colspan="7"><div class="empty">No transactions matched your filters.</div></td></tr>');
+            return;
+          }
+          $('#transactionTableBody').html(res.items.map(function (item) { return PFM.transactionRow(item, currency); }).join(''));
+        } catch (xhr) {
+          if (xhr.status === 401) { PFM.logout(); window.location.href = 'authentication.html'; }
         }
-        $('#transactionTableBody').html(list.map(PFM.transactionRow).join(''));
       }
 
       renderTable();

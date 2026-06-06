@@ -81,74 +81,86 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="scripts/app.js"></script>
   <script>
-    $(function () {
+    $(async function () {
       PFM.requireLogin();
       PFM.renderNav('profile');
 
-      var profile          = PFM.getProfile();
-      var originalCurrency = profile.currency || 'EUR';
+      var profile, originalCurrency;
+      try {
+        profile = await PFM.getProfile();
+        originalCurrency = profile.currency || 'EUR';
+        $('#fullName').val(profile.fullName || '');
+        $('#username').val(profile.username || '');
+        $('#email').val(profile.email || '');
+        $('#phone').val(profile.phone || '');
+        $('#age').val(profile.age || '');
+        $('#occupation').val(profile.occupation || '');
+        $('#currency').val(profile.currency || 'EUR');
+        $('#savingsGoal').val(profile.savingsGoal || 0);
+      } catch (xhr) {
+        if (xhr.status === 401) { PFM.logout(); window.location.href = 'authentication.html'; }
+        return;
+      }
 
-      $('#fullName').val(profile.fullName || '');
-      $('#username').val(profile.username || '');
-      $('#email').val(profile.email || '');
-      $('#phone').val(profile.phone || '');
-      $('#age').val(profile.age || '');
-      $('#occupation').val(profile.occupation || '');
-      $('#currency').val(profile.currency || 'EUR');
-      $('#savingsGoal').val(profile.savingsGoal || 0);
-
-      $('#profileForm').on('submit', function (e) {
+      $('#profileForm').on('submit', async function (e) {
         e.preventDefault();
         var rules    = PFM.getValidationMessages();
         var username = $('#username').val().trim();
         if (!PFM.validateUsername(username)) return PFM.showMessage('#profileMessage', 'danger', rules.username);
 
         var newCurrency = $('#currency').val();
+        var formData = {
+          fullName:     $('#fullName').val().trim(),
+          username:     username,
+          phone:        $('#phone').val().trim(),
+          age:          $('#age').val() ? parseInt($('#age').val()) : null,
+          occupation:   $('#occupation').val().trim(),
+          currency:     newCurrency,
+          savingsGoal:  Number($('#savingsGoal').val() || 0),
+          totalSavings: profile.totalSavings || 0
+        };
 
-        var updatedProfile = $.extend({}, profile, {
-          fullName:    $('#fullName').val().trim(),
-          username:    username,
-          phone:       $('#phone').val().trim(),
-          age:         $('#age').val(),
-          occupation:  $('#occupation').val().trim(),
-          currency:    newCurrency,
-          savingsGoal: Number($('#savingsGoal').val() || 0)
-        });
-
-        /* If currency changed, convert all stored financial values via API */
         if (newCurrency !== originalCurrency) {
           $('#saveBtn').prop('disabled', true).text('Converting…');
           PFM.showMessage('#profileMessage', 'info', 'Calling exchange-rate API…');
-
-          PFM.saveProfile(updatedProfile);
-
-          PFM.convertUserFinancialData(originalCurrency, newCurrency, null)
-            .then(function (result) {
-              originalCurrency = newCurrency;
-              profile = PFM.getProfile();
-              $('#savingsGoal').val(profile.savingsGoal || 0);
-              $('#saveBtn').prop('disabled', false).text('Save profile');
-              PFM.showMessage('#profileMessage', 'success',
-                'Profile saved. All financial amounts were converted from ' + result.from + ' to ' + result.to +
-                ' (rate ' + result.rate.toFixed(6) + ' on ' + result.date + ').');
-            })
-            .catch(function (err) {
-              /* Keep the edited profile fields, but revert the currency because numeric amounts were not converted */
-              updatedProfile.currency = originalCurrency;
-              PFM.saveProfile(updatedProfile);
-              profile = PFM.getProfile();
-              $('#currency').val(originalCurrency);
-              $('#saveBtn').prop('disabled', false).text('Save profile');
-              PFM.showMessage('#profileMessage', 'warning',
-                'Profile details were saved, but currency was not changed because conversion failed: ' + err.message);
+          try {
+            /* Save profile fields first with the original currency so the
+               conversion endpoint can validate fromCurrency == profile.currency */
+            await $.ajax({
+              url: PFM.API_BASE + '/profile',
+              method: 'PUT', contentType: 'application/json',
+              headers: PFM.getAuthHeaders(),
+              data: JSON.stringify($.extend({}, formData, { currency: originalCurrency }))
             });
-
+            var result = await PFM.convertUserFinancialData(originalCurrency, newCurrency, null);
+            originalCurrency = newCurrency;
+            profile = result.profile;
+            $('#savingsGoal').val(profile.savingsGoal || 0);
+            $('#saveBtn').prop('disabled', false).text('Save profile');
+            PFM.showMessage('#profileMessage', 'success',
+              'Profile saved. All financial amounts were converted from ' + result.from + ' to ' + result.to +
+              ' (rate ' + result.rate.toFixed(6) + ' on ' + result.date + ').');
+          } catch (err) {
+            $('#currency').val(originalCurrency);
+            $('#saveBtn').prop('disabled', false).text('Save profile');
+            var msg = err.responseJSON ? err.responseJSON.error : err.message;
+            PFM.showMessage('#profileMessage', 'warning',
+              'Profile details were saved, but currency was not changed because conversion failed: ' + msg);
+          }
         } else {
-          /* No currency change — just save */
-          PFM.saveProfile(updatedProfile);
-          originalCurrency = newCurrency;
-          profile = PFM.getProfile();
-          PFM.showMessage('#profileMessage', 'success', 'Profile saved successfully.');
+          try {
+            profile = await $.ajax({
+              url: PFM.API_BASE + '/profile',
+              method: 'PUT', contentType: 'application/json',
+              headers: PFM.getAuthHeaders(),
+              data: JSON.stringify(formData)
+            });
+            originalCurrency = newCurrency;
+            PFM.showMessage('#profileMessage', 'success', 'Profile saved successfully.');
+          } catch (xhr) {
+            var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Save failed.';
+            PFM.showMessage('#profileMessage', 'danger', msg);
+          }
         }
       });
     });

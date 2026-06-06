@@ -117,47 +117,47 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="scripts/app.js"></script>
   <script>
-    $(function () {
+    $(async function () {
       PFM.requireLogin();
       PFM.renderNav('dashboard');
 
-      var profile  = PFM.getProfile();
-      var all      = PFM.getUserTransactions();
-      var totals   = PFM.getTotals(all);
-      var monthly  = PFM.getMonthlyTotals(all);
-      var progress = PFM.getSavingsProgress();
-      var article  = PFM.getArticleOfDay();
-      var kpi      = PFM.getKpi();
-      var recent   = PFM.getRecentTransactions(5);
+      try {
+        var data    = await $.ajax({ url: PFM.API_BASE + '/dashboard', headers: PFM.getAuthHeaders() });
+        var cur     = data.profile.currency;
+        var article = PFM.getArticleOfDay();
 
-      $('#welcomeText').text('Welcome, ' + (profile.fullName || profile.username) + '!');
-      $('#balanceValue').text(PFM.formatAmount(totals.balance));
-      $('#monthlyIncomeValue').text(PFM.formatAmount(monthly.income));
-      $('#monthlyExpensesValue').text(PFM.formatAmount(monthly.expenses));
-      $('#savingsValue').text(PFM.formatAmount(profile.totalSavings || 0));
-      $('#goalNote').text('Goal: ' + PFM.formatAmount(profile.savingsGoal || 0) + ' · ' + progress.toFixed(0) + '% reached');
-      $('#savingsBar').css('width', progress + '%');
-      $('#articleTitle').text(article.title);
-      $('#articleText').text(article.text);
-      $('#kpiLabel').text(kpi.label);
-      $('#kpiValue').text(kpi.value.toFixed(1) + '%');
-      $('#kpiText').text(kpi.message);
+        $('#welcomeText').text('Welcome, ' + data.profile.fullName + '!');
+        $('#balanceValue').text(PFM.formatAmount(data.totals.balance, cur));
+        $('#monthlyIncomeValue').text(PFM.formatAmount(data.monthly.income, cur));
+        $('#monthlyExpensesValue').text(PFM.formatAmount(data.monthly.expenses, cur));
+        $('#savingsValue').text(PFM.formatAmount(data.profile.totalSavings, cur));
+        $('#goalNote').text('Goal: ' + PFM.formatAmount(data.profile.savingsGoal, cur) + ' · ' + data.savingsProgress.toFixed(0) + '% reached');
+        $('#savingsBar').css('width', data.savingsProgress + '%');
+        $('#articleTitle').text(article.title);
+        $('#articleText').text(article.text);
+        $('#kpiLabel').text(data.kpi.label);
+        $('#kpiValue').text(data.kpi.value.toFixed(1) + '%');
+        $('#kpiText').text('How much of this month\'s income remains after expenses.');
 
-      if (!recent.length) {
-        $('#recentTableBody').html('<tr><td colspan="5"><div class="empty">No transactions yet. Add your first income or expense.</div></td></tr>');
-      } else {
-        var html = '';
-        recent.forEach(function (item) {
-          var isIncome = item.type === 'Income';
-          html += '<tr>' +
-            '<td>' + item.date + '</td>' +
-            '<td><span class="badge badge-' + (isIncome ? 'income' : 'expense') + '">' + item.type + '</span></td>' +
-            '<td>' + item.category + '</td>' +
-            '<td>' + item.description + '</td>' +
-            '<td class="' + (isIncome ? 'amt-income' : 'amt-expense') + '">' + (isIncome ? '+' : '-') + PFM.formatAmount(item.amount) + '</td>' +
-            '</tr>';
-        });
-        $('#recentTableBody').html(html);
+        if (!data.recentTransactions.length) {
+          $('#recentTableBody').html('<tr><td colspan="5"><div class="empty">No transactions yet. Add your first income or expense.</div></td></tr>');
+        } else {
+          var html = '';
+          data.recentTransactions.forEach(function (item) {
+            var isIncome = item.type === 'Income';
+            html += '<tr>' +
+              '<td>' + item.date + '</td>' +
+              '<td><span class="badge badge-' + (isIncome ? 'income' : 'expense') + '">' + item.type + '</span></td>' +
+              '<td>' + item.category + '</td>' +
+              '<td>' + item.description + '</td>' +
+              '<td class="' + (isIncome ? 'amt-income' : 'amt-expense') + '">' + (isIncome ? '+' : '-') + PFM.formatAmount(item.amount, cur) + '</td>' +
+              '</tr>';
+          });
+          $('#recentTableBody').html(html);
+        }
+      } catch (xhr) {
+        if (xhr.status === 401) { PFM.logout(); window.location.href = 'authentication.html'; }
+        if (xhr.status === 404) window.location.href = 'profile-setup.html';
       }
     });
   </script>

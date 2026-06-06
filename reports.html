@@ -77,23 +77,26 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="scripts/app.js"></script>
   <script>
-    $(function () {
+    $(async function () {
       PFM.requireLogin();
       PFM.renderNav('reports');
 
-      var profile = PFM.getProfile();
-      var map     = PFM.getCurrencyMap();
-      var curName = (map[profile.currency] || map.EUR).name;
-      $('#currencyNote').text('Currency: ' + profile.currency + ' — ' + curName);
+      var currency = 'EUR';
+      try {
+        var profile = await PFM.getProfile();
+        currency = profile.currency || 'EUR';
+        var map     = PFM.getCurrencyMap();
+        var curName = (map[currency] || map.EUR).name;
+        $('#currencyNote').text('Currency: ' + currency + ' — ' + curName);
+      } catch (e) {}
 
-      /* Default range: current month */
-      var now   = new Date();
-      var y     = now.getFullYear();
-      var m     = String(now.getMonth() + 1).padStart(2, '0');
+      var now = new Date();
+      var y   = now.getFullYear();
+      var m   = String(now.getMonth() + 1).padStart(2, '0');
       $('#startDate').val(y + '-' + m + '-01');
       $('#endDate').val(now.toISOString().split('T')[0]);
 
-      $('#reportForm').on('submit', function (e) {
+      $('#reportForm').on('submit', async function (e) {
         e.preventDefault();
         var startDate = $('#startDate').val();
         var endDate   = $('#endDate').val();
@@ -101,15 +104,22 @@
         if (startDate > endDate)
           return PFM.showMessage('#reportMessage', 'danger', 'Start date must be before or equal to end date.');
 
-        var report = PFM.getReportTotals(startDate, endDate);
-
-        $('#reportBalance').text(PFM.formatAmount(report.balance));
-        $('#reportIncome').text(PFM.formatAmount(report.income));
-        $('#reportExpenses').text(PFM.formatAmount(report.expenses));
-
-        PFM.showMessage('#reportMessage', 'success',
-          'Report generated for ' + report.count + ' transaction' + (report.count === 1 ? '' : 's') +
-          ' between ' + startDate + ' and ' + endDate + '.');
+        try {
+          var report = await $.ajax({
+            url: PFM.API_BASE + '/reports/summary',
+            headers: PFM.getAuthHeaders(),
+            data: { startDate: startDate, endDate: endDate }
+          });
+          $('#reportBalance').text(PFM.formatAmount(report.balance, currency));
+          $('#reportIncome').text(PFM.formatAmount(report.income, currency));
+          $('#reportExpenses').text(PFM.formatAmount(report.expenses, currency));
+          PFM.showMessage('#reportMessage', 'success',
+            'Report generated for ' + report.count + ' transaction' + (report.count === 1 ? '' : 's') +
+            ' between ' + startDate + ' and ' + endDate + '.');
+        } catch (xhr) {
+          var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Report failed.';
+          PFM.showMessage('#reportMessage', 'danger', msg);
+        }
       });
     });
   </script>

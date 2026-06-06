@@ -91,42 +91,51 @@
       if (PFM.getCurrentUser()) window.location.href = 'dashboard.html';
       var rules = PFM.getValidationMessages();
 
-      $('#registerForm').on('submit', function (e) {
+      $('#registerForm').on('submit', async function (e) {
         e.preventDefault();
         var fullName = $('#registerFullName').val().trim();
         var username = $('#registerUsername').val().trim();
         var email    = $('#registerEmail').val().trim().toLowerCase();
         var password = $('#registerPassword').val();
-        var users    = PFM.getUsers();
 
         if (!fullName)                       return PFM.showMessage('#authMessage', 'danger', 'Full name is required.');
         if (!PFM.validateUsername(username)) return PFM.showMessage('#authMessage', 'danger', rules.username);
         if (!PFM.validateEmail(email))       return PFM.showMessage('#authMessage', 'danger', rules.email);
         if (!PFM.validatePassword(password)) return PFM.showMessage('#authMessage', 'danger', rules.password);
-        if (users.some(function (u) { return u.email === email; }))
-          return PFM.showMessage('#authMessage', 'danger', 'That email is already registered.');
-        if (users.some(function (u) { return u.username.toLowerCase() === username.toLowerCase(); }))
-          return PFM.showMessage('#authMessage', 'danger', 'That username is already taken.');
 
-        users.push({ fullName: fullName, username: username, email: email, password: password, createdAt: new Date().toISOString() });
-        PFM.saveUsers(users);
-        PFM.saveCurrentUser({ fullName: fullName, username: username, email: email });
-        window.location.href = 'profile-setup.html';
+        try {
+          var res = await $.ajax({
+            url: PFM.API_BASE + '/auth/register',
+            method: 'POST', contentType: 'application/json',
+            data: JSON.stringify({ fullName: fullName, username: username, email: email, password: password })
+          });
+          PFM.saveCurrentUser(res.token);
+          window.location.href = 'profile-setup.html';
+        } catch (xhr) {
+          var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Registration failed.';
+          PFM.showMessage('#authMessage', 'danger', msg);
+        }
       });
 
-      $('#loginForm').on('submit', function (e) {
+      $('#loginForm').on('submit', async function (e) {
         e.preventDefault();
         var email    = $('#loginEmail').val().trim().toLowerCase();
         var password = $('#loginPassword').val();
         if (!PFM.validateEmail(email)) return PFM.showMessage('#authMessage', 'danger', rules.email);
         if (!password)                 return PFM.showMessage('#authMessage', 'danger', 'Enter your password.');
 
-        var user = PFM.getUsers().find(function (u) { return u.email === email && u.password === password; });
-        if (!user) return PFM.showMessage('#authMessage', 'danger', 'Incorrect email or password.');
-
-        PFM.saveCurrentUser({ fullName: user.fullName, username: user.username, email: user.email });
-        var profile = PFM.getProfile();
-        window.location.href = (profile.phone) ? 'dashboard.html' : 'profile-setup.html';
+        try {
+          var res = await $.ajax({
+            url: PFM.API_BASE + '/auth/login',
+            method: 'POST', contentType: 'application/json',
+            data: JSON.stringify({ email: email, password: password })
+          });
+          PFM.saveCurrentUser(res.token);
+          window.location.href = res.profileComplete ? 'dashboard.html' : 'profile-setup.html';
+        } catch (xhr) {
+          var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Incorrect email or password.';
+          PFM.showMessage('#authMessage', 'danger', msg);
+        }
       });
     });
   </script>

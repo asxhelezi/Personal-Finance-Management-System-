@@ -73,12 +73,18 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="scripts/app.js"></script>
   <script>
-    $(function () {
+    $(async function () {
       PFM.requireLogin();
       PFM.renderNav('transactions');
-      var id          = PFM.queryId();
-      var transaction = PFM.getTransactionById(id);
-      if (!transaction) { PFM.showMessage('#editMessage', 'danger', 'Transaction not found.'); return; }
+      var id = PFM.queryId();
+
+      var transaction;
+      try {
+        transaction = await $.ajax({ url: PFM.API_BASE + '/transactions/' + id, headers: PFM.getAuthHeaders() });
+      } catch (xhr) {
+        PFM.showMessage('#editMessage', 'danger', 'Transaction not found.');
+        return;
+      }
 
       $('#transactionDate').val(transaction.date);
       $('#transactionType').val(transaction.type);
@@ -91,21 +97,30 @@
         PFM.fillCategoryOptions('#transactionType', '#category');
       });
 
-      $('#editTransactionForm').on('submit', function (e) {
+      $('#editTransactionForm').on('submit', async function (e) {
         e.preventDefault();
         if (!$('#category').val()) return PFM.showMessage('#editMessage', 'danger', 'Select a category.');
 
-        PFM.updateTransaction(id, {
-          date:        $('#transactionDate').val(),
-          type:        $('#transactionType').val(),
-          category:    $('#category').val(),
-          description: $('#description').val().trim(),
-          amount:      Number($('#amount').val()),
-          status:      $('#status').val()
-        });
-
-        PFM.showMessage('#editMessage', 'success', 'Transaction updated. Redirecting…');
-        setTimeout(function () { window.location.href = 'transactions.html'; }, 900);
+        try {
+          await $.ajax({
+            url: PFM.API_BASE + '/transactions/' + id,
+            method: 'PUT', contentType: 'application/json',
+            headers: PFM.getAuthHeaders(),
+            data: JSON.stringify({
+              date:        $('#transactionDate').val(),
+              type:        $('#transactionType').val(),
+              category:    $('#category').val(),
+              description: $('#description').val().trim(),
+              amount:      Number($('#amount').val()),
+              status:      $('#status').val()
+            })
+          });
+          PFM.showMessage('#editMessage', 'success', 'Transaction updated. Redirecting…');
+          setTimeout(function () { window.location.href = 'transactions.html'; }, 900);
+        } catch (xhr) {
+          var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Update failed.';
+          PFM.showMessage('#editMessage', 'danger', msg);
+        }
       });
     });
   </script>

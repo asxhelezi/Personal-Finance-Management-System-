@@ -81,23 +81,32 @@
         PFM.fillCategoryOptions('#transactionType', '#category');
       });
 
-      $('#transactionForm').on('submit', function (e) {
+      $('#transactionForm').on('submit', async function (e) {
         e.preventDefault();
-        if (!$('#category').val())               return PFM.showMessage('#transactionMessage', 'danger', 'Select a category.');
-        if (!$('#description').val().trim())     return PFM.showMessage('#transactionMessage', 'danger', 'Enter a description.');
-        if (Number($('#amount').val()) <= 0)     return PFM.showMessage('#transactionMessage', 'danger', 'Amount must be greater than 0.');
+        if (!$('#category').val())           return PFM.showMessage('#transactionMessage', 'danger', 'Select a category.');
+        if (!$('#description').val().trim()) return PFM.showMessage('#transactionMessage', 'danger', 'Enter a description.');
+        if (Number($('#amount').val()) <= 0) return PFM.showMessage('#transactionMessage', 'danger', 'Amount must be greater than 0.');
 
-        PFM.addTransaction({
-          date:        $('#transactionDate').val(),
-          type:        $('#transactionType').val(),
-          category:    $('#category').val(),
-          description: $('#description').val().trim(),
-          amount:      Number($('#amount').val()),
-          status:      $('#status').val()
-        });
-
-        PFM.showMessage('#transactionMessage', 'success', 'Transaction saved. Redirecting…');
-        setTimeout(function () { window.location.href = 'transactions.html'; }, 900);
+        try {
+          await $.ajax({
+            url: PFM.API_BASE + '/transactions',
+            method: 'POST', contentType: 'application/json',
+            headers: PFM.getAuthHeaders(),
+            data: JSON.stringify({
+              date:        $('#transactionDate').val(),
+              type:        $('#transactionType').val(),
+              category:    $('#category').val(),
+              description: $('#description').val().trim(),
+              amount:      Number($('#amount').val()),
+              status:      $('#status').val()
+            })
+          });
+          PFM.showMessage('#transactionMessage', 'success', 'Transaction saved. Redirecting…');
+          setTimeout(function () { window.location.href = 'transactions.html'; }, 900);
+        } catch (xhr) {
+          var msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Save failed.';
+          PFM.showMessage('#transactionMessage', 'danger', msg);
+        }
       });
     });
   </script>

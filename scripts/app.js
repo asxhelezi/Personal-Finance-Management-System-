@@ -1,25 +1,33 @@
 var PFM = (function () {
   var RAPID_HOST = 'currency-conversion-and-exchange-rates.p.rapidapi.com';
   var RAPID_KEY  = '17ac984572msh4dc66bb06822766p1257f5jsn16297f76c636';
+  var API_BASE   = 'http://localhost:5000/api';
 
-  /* ── Storage helpers ── */
-  function read(key, fallback) {
-    try { var d = localStorage.getItem(key); return d ? JSON.parse(d) : fallback; }
-    catch (e) { return fallback; }
+  /* ── Auth helpers ── */
+  function getAuthHeaders() {
+    var token = localStorage.getItem('pfmJwt');
+    return token ? { 'Authorization': 'Bearer ' + token } : {};
   }
-  function write(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
 
-  function getUsers()          { return read('pfmUsers', []); }
-  function saveUsers(u)        { write('pfmUsers', u); }
-  function getCurrentUser()    { return read('pfmCurrentUser', null); }
-  function saveCurrentUser(u)  { write('pfmCurrentUser', u); }
-  function logout()            { localStorage.removeItem('pfmCurrentUser'); }
-  function getProfiles()       { return read('pfmProfiles', {}); }
-  function getTransactions()   { return read('pfmTransactions', []); }
-  function saveTransactions(t) { write('pfmTransactions', t); }
+  function getCurrentUser() {
+    var token = localStorage.getItem('pfmJwt');
+    if (!token) return null;
+    try {
+      var payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.exp * 1000 < Date.now()) {
+        localStorage.removeItem('pfmJwt');
+        return null;
+      }
+      return { fullName: payload.fullName, username: payload.username, email: payload.email };
+    } catch (e) { return null; }
+  }
 
-  function roundCurrency(value) {
-    return Math.round(Number(value || 0) * 100) / 100;
+  function saveCurrentUser(token) {
+    localStorage.setItem('pfmJwt', token);
+  }
+
+  function logout() {
+    localStorage.removeItem('pfmJwt');
   }
 
   function requireLogin() {
@@ -28,79 +36,14 @@ var PFM = (function () {
 
   /* ── Profile ── */
   function getProfile() {
-    var cur = getCurrentUser();
-    if (!cur) return null;
-    var profiles = getProfiles();
-    if (!profiles[cur.email]) {
-      profiles[cur.email] = {
-        fullName: cur.fullName || '', username: cur.username || '',
-        email: cur.email, phone: '', age: '', occupation: '',
-        currency: 'EUR', savingsGoal: 0, totalSavings: 0,
-        createdAt: new Date().toISOString()
-      };
-      write('pfmProfiles', profiles);
-    }
-    return profiles[cur.email];
-  }
-
-  function saveProfile(data) {
-    var cur = getCurrentUser();
-    if (!cur) return;
-    var profiles = getProfiles();
-    profiles[cur.email] = data;
-    write('pfmProfiles', profiles);
-    var users = getUsers();
-    var idx = users.findIndex(function (u) { return u.email === cur.email; });
-    if (idx !== -1) {
-      users[idx].fullName = data.fullName;
-      users[idx].username = data.username;
-      saveUsers(users);
-    }
-    saveCurrentUser({ fullName: data.fullName, username: data.username, email: cur.email });
-  }
-
-  /* ── Transactions ── */
-  function getUserTransactions() {
-    var cur = getCurrentUser();
-    if (!cur) return [];
-    return getTransactions().filter(function (t) { return t.userEmail === cur.email; });
-  }
-
-  function uid() { return Date.now() + Math.floor(Math.random() * 100000); }
-
-  function normalizeTransaction(d) {
-    return {
-      id: d.id || uid(), userEmail: getCurrentUser().email,
-      date: d.date, type: d.type, category: d.category,
-      description: d.description, amount: Number(d.amount),
-      status: d.status, createdAt: d.createdAt || new Date().toISOString()
-    };
-  }
-
-  function addTransaction(item) {
-    var items = getTransactions();
-    items.push(normalizeTransaction(item));
-    saveTransactions(items);
-  }
-
-  function updateTransaction(id, updates) {
-    var items = getTransactions();
-    var idx = items.findIndex(function (t) { return Number(t.id) === Number(id); });
-    if (idx === -1) return false;
-    items[idx] = normalizeTransaction($.extend({}, items[idx], updates, { id: items[idx].id, createdAt: items[idx].createdAt }));
-    saveTransactions(items);
-    return true;
-  }
-
-  function deleteTransaction(id) {
-    saveTransactions(getTransactions().filter(function (t) { return Number(t.id) !== Number(id); }));
-  }
-
-  function getTransactionById(id) {
-    return getUserTransactions().find(function (t) { return Number(t.id) === Number(id); }) || null;
+    return $.ajax({ url: API_BASE + '/profile', method: 'GET', headers: getAuthHeaders() });
   }
 
   /* ── Currency ── */
+  function roundCurrency(value) {
+    return Math.round(Number(value || 0) * 100) / 100;
+  }
+
   function getCurrencyMap() {
     return {
       EUR: { symbol: '€', api: 'EUR', name: 'Euro' },
@@ -111,55 +54,15 @@ var PFM = (function () {
 
   function formatAmount(amount, currency) {
     var map = getCurrencyMap();
-    var cur = currency || ((getProfile() && getProfile().currency) || 'EUR');
-    var sym = (map[cur] || map.EUR).symbol;
+    var sym = (map[currency || 'EUR'] || map.EUR).symbol;
     return sym + Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  /* Use yesterday by default — today's data is often not yet published by the API */
   function getApiDate(dateString) {
     if (dateString) return dateString;
     var d = new Date();
     d.setDate(d.getDate() - 1);
     return d.toISOString().split('T')[0];
-  }
-
-  /* Uses $.ajax (jQuery AJAX) wrapped in a native Promise, matching the RapidAPI curl spec */
-  function convertUserFinancialData(fromCurrency, toCurrency, dateString) {
-    var profile = getProfile();
-    var cur = getCurrentUser();
-
-    if (!profile || !cur) {
-      return Promise.reject(new Error('No logged-in user found.'));
-    }
-
-    return convertAmount(1, fromCurrency, toCurrency, dateString).then(function (result) {
-      var rate = Number(result.rate || 1);
-      var updatedProfile = $.extend({}, profile, {
-        currency: toCurrency,
-        totalSavings: roundCurrency(Number(profile.totalSavings || 0) * rate),
-        savingsGoal: roundCurrency(Number(profile.savingsGoal || 0) * rate)
-      });
-
-      var allTransactions = getTransactions();
-      var updatedTransactions = allTransactions.map(function (t) {
-        if (t.userEmail !== cur.email) return t;
-        return $.extend({}, t, {
-          amount: roundCurrency(Number(t.amount || 0) * rate)
-        });
-      });
-
-      saveTransactions(updatedTransactions);
-      saveProfile(updatedProfile);
-
-      return {
-        rate: rate,
-        date: result.date,
-        from: fromCurrency,
-        to: toCurrency,
-        profile: updatedProfile
-      };
-    });
   }
 
   function convertAmount(amount, fromCurrency, toCurrency, dateString) {
@@ -180,13 +83,8 @@ var PFM = (function () {
 
     return new Promise(function (resolve, reject) {
       $.ajax({
-        url:    url,
-        method: 'GET',
-        headers: {
-          'Content-Type':    'application/json',
-          'x-rapidapi-host': RAPID_HOST,
-          'x-rapidapi-key':  RAPID_KEY
-        }
+        url: url, method: 'GET',
+        headers: { 'Content-Type': 'application/json', 'x-rapidapi-host': RAPID_HOST, 'x-rapidapi-key': RAPID_KEY }
       }).done(function (data) {
         var rates = data.rates && data.rates[date];
         var rate  = rates ? rates[toCode] : null;
@@ -194,16 +92,27 @@ var PFM = (function () {
           reject(new Error('No rate returned for ' + fromCode + '→' + toCode + ' on ' + date + '. Response: ' + JSON.stringify(data)));
           return;
         }
-        resolve({
-          rate:   Number(rate),
-          amount: Number(amount) * Number(rate),
-          date:   date,
-          from:   fromCurrency,
-          to:     toCurrency
-        });
+        resolve({ rate: Number(rate), amount: Number(amount) * Number(rate), date: date, from: fromCurrency, to: toCurrency });
       }).fail(function (xhr) {
         var msg = (xhr.responseJSON && xhr.responseJSON.message) || xhr.statusText || 'Request failed';
         reject(new Error('API error (' + xhr.status + '): ' + msg));
+      });
+    });
+  }
+
+  /* Calls RapidAPI for the rate, then sends it to the backend which applies the
+     conversion atomically across all transactions and the user's savings fields. */
+  function convertUserFinancialData(fromCurrency, toCurrency, dateString) {
+    return convertAmount(1, fromCurrency, toCurrency, dateString).then(function (result) {
+      var rate = Number(result.rate || 1);
+      return $.ajax({
+        url: API_BASE + '/profile/convert-currency',
+        method: 'POST',
+        contentType: 'application/json',
+        headers: getAuthHeaders(),
+        data: JSON.stringify({ fromCurrency: fromCurrency, toCurrency: toCurrency, rate: rate })
+      }).then(function (profile) {
+        return { rate: rate, date: result.date, from: fromCurrency, to: toCurrency, profile: profile };
       });
     });
   }
@@ -238,64 +147,6 @@ var PFM = (function () {
     $(categorySelector).html(html);
   }
 
-  /* ── Totals ── */
-  function getTotals(transactions) {
-    var income = 0, expenses = 0;
-    (transactions || []).forEach(function (t) {
-      if (t.type === 'Income') income += Number(t.amount || 0);
-      else expenses += Number(t.amount || 0);
-    });
-    var savings = Number((getProfile() && getProfile().totalSavings) || 0);
-    return { income: income, expenses: expenses, savings: savings, balance: income - expenses + savings };
-  }
-
-  function getMonthlyTotals(transactions) {
-    var now = new Date(), m = now.getMonth(), y = now.getFullYear();
-    return getTotals((transactions || []).filter(function (t) {
-      var d = new Date(t.date + 'T00:00:00');
-      return d.getMonth() === m && d.getFullYear() === y;
-    }));
-  }
-
-  function getReportTotals(startDate, endDate) {
-    var list = getUserTransactions().filter(function (t) {
-      return t.date >= startDate && t.date <= endDate;
-    });
-    return $.extend({ count: list.length }, getTotals(list));
-  }
-
-  function getSavingsProgress() {
-    var p = getProfile();
-    if (!p) return 0;
-    var goal = Number(p.savingsGoal || 0), total = Number(p.totalSavings || 0);
-    if (goal <= 0) return 0;
-    return Math.min(100, Math.max(0, (total / goal) * 100));
-  }
-
-  function getRecentTransactions(limit) {
-    return getUserTransactions().slice().sort(function (a, b) {
-      return new Date(b.date) - new Date(a.date) || Number(b.id) - Number(a.id);
-    }).slice(0, limit || 5);
-  }
-
-  function getArticleOfDay() {
-    var list = [
-      { title: 'Review your spending weekly',   text: 'A short weekly review helps you catch unnecessary spending before it becomes a habit.' },
-      { title: 'Save first, then spend',         text: 'Move a small amount to savings first. This makes your progress visible and consistent.' },
-      { title: 'Use categories carefully',       text: 'When categories are clear and consistent, your reports become much more useful.' },
-      { title: 'Check trends, not just totals',  text: 'Income and expenses are easier to manage when you compare periods instead of looking at one number.' }
-    ];
-    return list[new Date().getDate() % list.length];
-  }
-
-  function getKpi() {
-    var transactions = getUserTransactions();
-    var monthly = getMonthlyTotals(transactions);
-    var ratio = monthly.income > 0 ? ((monthly.income - monthly.expenses) / monthly.income) * 100 : 0;
-    var label = ratio >= 35 ? 'Strong' : ratio >= 15 ? 'Stable' : ratio >= 0 ? 'Watch closely' : 'Needs attention';
-    return { value: ratio, label: label, message: 'How much of this month\'s income remains after expenses.' };
-  }
-
   /* ── UI helpers ── */
   function showMessage(selector, type, message) {
     $(selector).html('<div class="alert alert-' + type + ' mb-0">' + message + '</div>');
@@ -310,14 +161,25 @@ var PFM = (function () {
     return cur ? (cur.username || cur.fullName || cur.email || 'U').charAt(0).toUpperCase() : 'U';
   }
 
-  function transactionRow(item) {
+  function getArticleOfDay() {
+    var list = [
+      { title: 'Review your spending weekly',   text: 'A short weekly review helps you catch unnecessary spending before it becomes a habit.' },
+      { title: 'Save first, then spend',         text: 'Move a small amount to savings first. This makes your progress visible and consistent.' },
+      { title: 'Use categories carefully',       text: 'When categories are clear and consistent, your reports become much more useful.' },
+      { title: 'Check trends, not just totals',  text: 'Income and expenses are easier to manage when you compare periods instead of looking at one number.' }
+    ];
+    return list[new Date().getDate() % list.length];
+  }
+
+  /* currency is passed explicitly because getProfile() is now async */
+  function transactionRow(item, currency) {
     var isIncome = item.type === 'Income';
     return '<tr>' +
       '<td>' + item.date + '</td>' +
       '<td><span class="badge badge-' + (isIncome ? 'income' : 'expense') + '">' + item.type + '</span></td>' +
       '<td>' + item.category + '</td>' +
       '<td>' + item.description + '</td>' +
-      '<td class="' + (isIncome ? 'amt-income' : 'amt-expense') + '">' + (isIncome ? '+' : '-') + formatAmount(item.amount) + '</td>' +
+      '<td class="' + (isIncome ? 'amt-income' : 'amt-expense') + '">' + (isIncome ? '+' : '-') + formatAmount(item.amount, currency) + '</td>' +
       '<td>' + getStatusBadge(item.status) + '</td>' +
       '<td class="text-end">' +
         '<a href="edit-transaction.html?id=' + item.id + '" class="btn btn-outline btn-sm me-2">Edit</a>' +
@@ -329,7 +191,7 @@ var PFM = (function () {
   function renderNav(active) {
     var cur      = getCurrentUser();
     var username = cur ? cur.username : 'user';
-    var nav = ['transactions','savings','reports'].map(function (page) {
+    var nav = ['transactions', 'savings', 'reports'].map(function (page) {
       var label = page.charAt(0).toUpperCase() + page.slice(1);
       return '<li><a class="nav-link' + (active === page ? ' active' : '') + '" href="' + page + '.html">' + label + '</a></li>';
     }).join('');
@@ -356,43 +218,38 @@ var PFM = (function () {
     return new URLSearchParams(window.location.search).get('id');
   }
 
-  /* ── Demo seed ── */
-  function seedDemoIfEmpty() {
-    if (getUsers().length > 0) return;
-    var demo = { fullName: 'Demo User', username: 'demo_user', email: 'demo@example.com', password: 'demo1234' };
-    saveUsers([demo]);
-    saveCurrentUser({ fullName: demo.fullName, username: demo.username, email: demo.email });
-    saveProfile({ fullName: demo.fullName, username: demo.username, email: demo.email, phone: '0691234567', age: '25', occupation: 'Student', currency: 'EUR', savingsGoal: 1000, totalSavings: 250, createdAt: new Date().toISOString() });
-    addTransaction({ date: new Date().toISOString().split('T')[0], type: 'Income',  category: 'Salary',    description: 'Part-time salary',  amount: 500, status: 'Completed' });
-    addTransaction({ date: new Date().toISOString().split('T')[0], type: 'Expense', category: 'Groceries', description: 'Weekly groceries', amount:  60, status: 'Completed' });
-    logout();
-  }
-
   /* ── Init ── */
   $(function () {
-    seedDemoIfEmpty();
+    /* Remove legacy localStorage keys left over from the pre-API version */
+    ['pfmUsers', 'pfmCurrentUser', 'pfmProfiles', 'pfmTransactions'].forEach(function (k) {
+      localStorage.removeItem(k);
+    });
+
     $(document).on('click', '#logoutBtn', function () {
       logout();
       window.location.href = 'authentication.html';
     });
+
     $(document).on('click', '.delete-transaction', function () {
-      var id = Number($(this).data('id'));
+      var id = $(this).data('id');
       if (!confirm('Delete this transaction?')) return;
-      deleteTransaction(id);
-      window.location.reload();
+      $.ajax({ url: API_BASE + '/transactions/' + id, method: 'DELETE', headers: getAuthHeaders() })
+        .done(function () { window.location.reload(); })
+        .fail(function (xhr) {
+          alert((xhr.responseJSON && xhr.responseJSON.error) || 'Delete failed.');
+        });
     });
   });
 
   return {
-    getUsers, saveUsers, getCurrentUser, saveCurrentUser, logout,
-    getProfile, saveProfile,
-    getTransactions, getUserTransactions, addTransaction, updateTransaction,
-    getTransactionById, deleteTransaction,
-    formatAmount, validateEmail, validateUsername, validatePassword,
-    getValidationMessages, getCategories, fillCategoryOptions,
-    requireLogin, getTotals, getMonthlyTotals, getReportTotals,
-    getSavingsProgress, getRecentTransactions, getArticleOfDay, getKpi,
+    API_BASE,
+    getAuthHeaders, getCurrentUser, saveCurrentUser, logout, requireLogin,
+    getProfile,
+    formatAmount, roundCurrency, getCurrencyMap,
+    convertAmount, convertUserFinancialData,
+    validateEmail, validateUsername, validatePassword, getValidationMessages,
+    getCategories, fillCategoryOptions,
     showMessage, renderNav, queryId, transactionRow,
-    convertAmount, convertUserFinancialData, getCurrencyMap, getStatusBadge
+    getStatusBadge, getArticleOfDay, getInitials
   };
 })();

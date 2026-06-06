@@ -4,8 +4,19 @@
   <meta charset="UTF-8">
   <title>Personal Finance System</title>
   <script>
-    var user = JSON.parse(localStorage.getItem('pfmCurrentUser') || 'null');
-    window.location.href = user ? 'dashboard.html' : 'authentication.html';
+    (function () {
+      var token = localStorage.getItem('pfmJwt');
+      if (!token) { window.location.href = 'authentication.html'; return; }
+      try {
+        var p = JSON.parse(atob(token.split('.')[1]));
+        if (p.exp * 1000 < Date.now()) {
+          localStorage.removeItem('pfmJwt');
+          window.location.href = 'authentication.html';
+        } else {
+          window.location.href = 'dashboard.html';
+        }
+      } catch (e) { window.location.href = 'authentication.html'; }
+    })();
   </script>
 </head>
 <body></body>
